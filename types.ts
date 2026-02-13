@@ -5,6 +5,7 @@ export interface Speaker {
 
 export interface TranscriptionSettings {
   language: string[]; // Changed from string to string[] for multi-language support
+  model: string; // NEW: Selected AI Model ID
   enableDiarization: boolean;
   speakers: Speaker[];
   enableTimestamps: boolean;

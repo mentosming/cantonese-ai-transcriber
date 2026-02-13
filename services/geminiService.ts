@@ -1,6 +1,6 @@
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { TranscriptionSettings, TranscriptionError } from "../types";
-import { MAX_FILE_SIZE_INLINE, LANGUAGES, ERROR_MESSAGES } from "../constants";
+import { MAX_FILE_SIZE_INLINE, LANGUAGES, ERROR_MESSAGES, AI_MODELS } from "../constants";
 
 // Helper to extract clean message from JSON error string
 const cleanErrorMessage = (msg: string): string => {
@@ -130,7 +130,6 @@ export const transcribeMedia = async (
   signal: AbortSignal
 ) => {
   // CRITICAL FIX: Directly access process.env.API_KEY.
-  // Vite will replace this string at build time.
   const apiKey = process.env.API_KEY;
 
   if (!apiKey) {
@@ -228,12 +227,12 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
       contentPart = part;
     }
 
-    // 3. Generate Stream with Fallback Logic
-    // We try the newest model first, then fallback to a stable one if it fails (404/400).
-    const modelsToTry = [
-      'gemini-3-pro-preview',
-      'gemini-2.0-flash-exp'
-    ];
+    // 3. Generate Stream with Model Selection & Fallback
+    const selectedModel = settings.model || 'gemini-3-pro-preview';
+    
+    // Construct fallback list (try selected first, then others if explicitly failing with recoverable errors)
+    const fallbackModels = AI_MODELS.map(m => m.id).filter(id => id !== selectedModel);
+    const modelsToTry = [selectedModel, ...fallbackModels];
 
     let lastError: any;
 
@@ -253,9 +252,9 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
           ]
         };
 
-        // Only add thinking config for models that support it (Gemini 3/2.5)
-        // Gemini 2.0 Flash Exp might not behave well with it, so we reserve it for the main model.
-        if (modelName.includes('gemini-3')) {
+        // Disable thinkingBudget for models that support it if using transcription (save tokens)
+        // or strictly follow logic for specific models
+        if (modelName.includes('gemini-3') || modelName.includes('thinking')) {
            config.thinkingConfig = { thinkingBudget: 0 };
         }
 
@@ -293,8 +292,16 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
         // Stop retrying if user aborted or if it's a safety block
         if (signal.aborted) throw e;
         if (e.response?.promptFeedback?.blockReason) throw e;
+        
+        // If it's a model not found (404) or bad request (400), try next model
+        const errMsg = e.message || JSON.stringify(e);
+        if (errMsg.includes('404') || errMsg.includes('400')) {
+             continue; 
+        }
 
-        // Continue to next model in loop...
+        // For other errors (like auth), probably stop
+        // But for network glitches, we might want to continue, but let's be strict to avoid burning quota on bad loops
+        if (errMsg.includes('403')) throw e; 
       }
     }
 
@@ -319,9 +326,8 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
     if (rawMsg.includes('fetch') || rawMsg.includes('network')) errObj.type = 'network';
     if (error.response?.promptFeedback?.blockReason) errObj.type = 'safety';
 
-    // Enhance message for specific codes
     if (rawMsg.includes('404')) {
-      errObj.message = `Model not found or API route unavailable (404). Please verify your API Key has access to Gemini 1.5/2.0/3.0 models.`;
+      errObj.message = `Selected Model not found or API route unavailable (404). Please try a different model in settings.`;
     }
 
     throw errObj;
@@ -356,29 +362,26 @@ ${text.slice(0, 100000)} ... (截取部分內容以符合 Context Window，若�
 4. **語言**：繁體中文 (Traditional Chinese)。
 `;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview', // Try this first
-      contents: [
-          { role: 'user', parts: [{ text: text }, { text: prompt }] }
-      ],
-      config: {
-        temperature: 0.3,
-      }
-    });
-    return response.text || "無法生成摘要。";
-  } catch (error: any) {
-    // Retry with older model if summary fails
-    try {
-        const fallbackAi = new GoogleGenAI({ apiKey: apiKey });
-        const response = await fallbackAi.models.generateContent({
-            model: 'gemini-2.0-flash-exp',
-            contents: [{ role: 'user', parts: [{ text: text }, { text: prompt }] }],
+  // Try robust models for summary
+  const summaryModels = ['gemini-3-pro-preview', 'gemini-2.0-flash-exp'];
+
+  for (const model of summaryModels) {
+      try {
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: [
+                { role: 'user', parts: [{ text: text }, { text: prompt }] }
+            ],
+            config: {
+                temperature: 0.3,
+            }
         });
         return response.text || "無法生成摘要。";
-    } catch (fallbackError: any) {
-        console.error("Summary generation error:", error);
-        throw new Error(cleanErrorMessage(error.message) || "生成摘要時發生錯誤");
-    }
+      } catch (error: any) {
+         console.warn(`Summary failed with ${model}`, error);
+         // Continue to next model if available
+      }
   }
+  
+  throw new Error("無法生成摘要，所有模型嘗試皆失敗。");
 };

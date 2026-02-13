@@ -1,5 +1,23 @@
 export const MAX_FILE_SIZE_INLINE = 20 * 1024 * 1024; // Reverted to 20MB (Standard Google API limit)
 
+export const AI_MODELS = [
+  { 
+    id: 'gemini-3-pro-preview', 
+    name: 'Gemini 3.0 Pro (最高品質 / 建議)', 
+    description: '最先進的模型，對廣東話俚語及中英夾雜識別能力最強。'
+  },
+  { 
+    id: 'gemini-2.0-flash-exp', 
+    name: 'Gemini 2.0 Flash (速度最快)', 
+    description: '處理速度極快，適合長錄音或簡單對話。'
+  },
+  { 
+    id: 'gemini-2.0-flash-thinking-exp', 
+    name: 'Gemini 2.0 Flash Thinking (增強推理)', 
+    description: '具備更強的邏輯推理能力，適合複雜語境。'
+  }
+];
+
 export const LANGUAGES = [
   { 
     id: 'yue', 
