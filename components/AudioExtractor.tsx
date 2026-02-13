@@ -60,7 +60,8 @@ const AudioExtractor: React.FC = () => {
       const leftData = floatTo16BitPCM(audioBuffer.getChannelData(0));
       const rightData = channels > 1 ? floatTo16BitPCM(audioBuffer.getChannelData(1)) : undefined;
 
-      const mp3Data: Int8Array[] = [];
+      // FIX: Use any[] to avoid TypeScript conflicts between Int8Array<SharedArrayBuffer> and BlobPart
+      const mp3Data: any[] = [];
       const sampleBlockSize = 1152;
       const processingChunk = sampleBlockSize * 100; // Process in chunks to avoid blocking UI too much
 
