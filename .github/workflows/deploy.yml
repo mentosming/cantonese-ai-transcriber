@@ -25,11 +25,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          # Cache is deliberately removed/commented out to allow build without lockfile
+          # Cache is removed to prevent loading stale lockfiles
           # cache: 'npm' 
 
       - name: Install Dependencies
-        run: npm install
+        # CRITICAL FIX: Remove package-lock.json to force resolving the latest version of @google/genai
+        run: |
+          rm -f package-lock.json
+          npm install
 
       - name: Build
         run: npm run build
