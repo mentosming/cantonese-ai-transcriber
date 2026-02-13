@@ -625,6 +625,7 @@ const App: React.FC = () => {
                         <TranscriptionView 
                             text={transcription} 
                             status={status} 
+                            speakers={settings.speakers} // Pass mapping config here!
                             onClear={handleClearTranscription}
                             onUpdate={handleUpdateTranscription}
                             onSwitchToSummary={() => setActiveTab('summary')}

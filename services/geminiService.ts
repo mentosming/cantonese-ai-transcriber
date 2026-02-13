@@ -186,8 +186,15 @@ ${langInstructions}
 
   // Additional settings injection
   if (settings.speakers.length > 0) {
-      const speakerMap = settings.speakers.map(s => `${s.id} is ${s.name}`).join(', ');
-      systemInstruction += `\n**Known Speakers Context:**\nUse these names if the voice matches: ${speakerMap}.`;
+      // Create explicit substitution rules
+      const speakerRules = settings.speakers.map(s => `- REPLACE "${s.id}" with "${s.name}"`).join('\n');
+      
+      systemInstruction += `
+\n**SPEAKER NAME SUBSTITUTION (MANDATORY):**
+You must identify speakers using the specific names provided below instead of generic labels:
+${speakerRules}
+If you hear a distinct voice matching the sequence (1st new voice, 2nd new voice), assign them to these names respectively.
+`;
   }
 
   if (settings.customPrompt && settings.customPrompt.trim()) {
