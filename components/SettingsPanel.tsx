@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings2, Plus, Trash2, Clock, Globe, MessageSquarePlus, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { Settings2, Plus, Trash2, Clock, Globe, MessageSquarePlus, Check, ChevronDown, ChevronUp, Bot } from 'lucide-react';
 import { TranscriptionSettings, Speaker } from '../types';
-import { LANGUAGES } from '../constants';
+import { LANGUAGES, AI_MODELS } from '../constants';
 
 interface SettingsPanelProps {
   settings: TranscriptionSettings;
@@ -61,6 +61,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange, disab
     onChange({ ...settings, customPrompt: e.target.value });
   };
 
+  const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    onChange({ ...settings, model: e.target.value });
+  };
+
   const addSpeaker = () => {
     if (!newSpeakerName.trim()) return;
     const newSpeaker: Speaker = {
@@ -90,6 +94,29 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange, disab
       </div>
 
       <div className="space-y-6">
+        {/* Model Selection (NEW) */}
+        <div>
+           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2">
+               <Bot size={16} className="text-slate-400" />
+               AI 模型 (Engine)
+           </label>
+           <select
+             value={settings.model}
+             onChange={handleModelChange}
+             disabled={disabled}
+             className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm text-slate-900 dark:text-slate-100 cursor-pointer"
+           >
+             {AI_MODELS.map((model) => (
+               <option key={model.id} value={model.id}>
+                 {model.name}
+               </option>
+             ))}
+           </select>
+           <p className="text-xs text-slate-400 mt-1">
+             {AI_MODELS.find(m => m.id === settings.model)?.description || '選擇用於轉錄的 Gemini 模型。'}
+           </p>
+        </div>
+
         {/* Language Selection (Multi-Select) */}
         <div>
            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
