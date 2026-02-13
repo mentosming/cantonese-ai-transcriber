@@ -8,10 +8,13 @@ export default defineConfig(({ mode }) => {
   
   // Aggressively search for the API Key in multiple common variables
   // Priority: process.env (Vercel System) -> .env files -> Fallbacks
+  // Added 'API_Key' specifically to match the user's Vercel configuration screenshot.
   const apiKey = 
     process.env.API_KEY || 
+    process.env.API_Key || 
     process.env.VITE_API_KEY || 
     env.API_KEY || 
+    env.API_Key || 
     env.VITE_API_KEY || 
     '';
 
