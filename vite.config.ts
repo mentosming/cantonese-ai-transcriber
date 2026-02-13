@@ -3,19 +3,24 @@ import react from '@vitejs/plugin-react';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, (process as any).cwd(), '');
+  // Load env file based on `mode` in the current working directory.
+  // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
+  const env = loadEnv(mode, process.cwd(), '');
+  
+  // Prioritize system env (Vercel) -> .env files -> fallback
+  // Also check VITE_API_KEY just in case the user prefixed it.
+  const apiKey = process.env.API_KEY || env.API_KEY || process.env.VITE_API_KEY || env.VITE_API_KEY || '';
+
+  console.log(`[Vite Build] Mode: ${mode}`);
+  console.log(`[Vite Build] API_KEY detected: ${apiKey ? 'YES (Length: ' + apiKey.length + ')' : 'NO'}`);
+
   return {
     plugins: [react()],
-    // Headers removed to allow CDN scripts (Tailwind/LameJS) to load without CORS issues
-    // optimizeDeps for ffmpeg removed as we switched to lamejs
-    
-    // Polyfill process.env for the client-side code
+    // Polyfill process.env for the browser
     define: {
-      // CRITICAL FIX: Define process.env as a single object containing all necessary keys
-      // This ensures both NODE_ENV and API_KEY are available at runtime
       'process.env': JSON.stringify({
         NODE_ENV: mode,
-        API_KEY: process.env.API_KEY || env.API_KEY,
+        API_KEY: apiKey,
       }),
     },
     build: {

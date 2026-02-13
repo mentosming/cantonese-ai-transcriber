@@ -104,11 +104,19 @@ export const transcribeMedia = async (
   onProgress: (text: string) => void,
   signal: AbortSignal
 ) => {
-  if (!process.env.API_KEY) {
-    throw { type: 'auth', message: "API Key not found in environment" } as TranscriptionError;
+  // Robust check for API Key
+  // @ts-ignore - Process might be undefined in strict environments, but polyfilled by Vite
+  const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) ? process.env.API_KEY : null;
+
+  if (!apiKey) {
+    console.error("API Key missing. Environment:", typeof process !== 'undefined' ? process.env : "N/A");
+    throw { 
+      type: 'auth', 
+      message: "API Key not found. Please add 'API_KEY' to your Vercel Project Settings (Environment Variables) and redeploy." 
+    } as TranscriptionError;
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: apiKey });
   
   // 1. Build System Instruction for Multiple Languages
   const selectedLangIds = settings.language;
@@ -177,7 +185,7 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
     // 2. Handle File Upload (Inline vs Cloud)
     if (file.size > MAX_FILE_SIZE_INLINE) {
       try {
-        const fileUri = await uploadFileToGemini(file, process.env.API_KEY);
+        const fileUri = await uploadFileToGemini(file, apiKey);
         contentPart = {
           fileData: {
             mimeType: file.type || 'application/octet-stream',
@@ -254,11 +262,14 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
 
 // New Function for Summarization
 export const generateSummary = async (text: string): Promise<string> => {
-  if (!process.env.API_KEY) {
-    throw new Error("API Key not found");
+  // @ts-ignore
+  const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) ? process.env.API_KEY : null;
+  
+  if (!apiKey) {
+    throw new Error("API Key not found. Please check Vercel settings.");
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: apiKey });
   
   const prompt = `
 請根據提供的轉錄文字，生成一份極其詳盡的「問答式摘要」(Q&A Summary)。
