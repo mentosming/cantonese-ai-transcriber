@@ -188,12 +188,18 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
   }
 
   if (settings.enableDiarization) {
-    systemInstruction += "\n\n**Speaker Diarization:** Identify different speakers.";
+    // Stronger instruction for diarization
+    systemInstruction += `
+    
+**Speaker Diarization (Mandatory):**
+- You MUST identify different speakers in the audio.
+- Format strictly as: \`[MM:SS - MM:SS] Speaker Name: Content\`
+- If you don't know the name, use "Speaker 1", "Speaker 2", etc.
+- Do NOT combine speeches from different speakers into one paragraph. Start a new line for every speaker change.
+`;
     if (settings.speakers.length > 0) {
       const speakerMap = settings.speakers.map(s => `${s.id} is ${s.name}`).join(', ');
-      systemInstruction += `\nUse these known speakers if voices match: ${speakerMap}.`;
-    } else {
-      systemInstruction += `\nLabel as "Speaker 1", "Speaker 2", etc.`;
+      systemInstruction += `\nKnown voices: ${speakerMap}.`;
     }
   }
 

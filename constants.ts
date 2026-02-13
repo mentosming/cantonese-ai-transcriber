@@ -2,6 +2,11 @@ export const MAX_FILE_SIZE_INLINE = 20 * 1024 * 1024; // Reverted to 20MB (Stand
 
 export const AI_MODELS = [
   { 
+    id: 'gemini-3-pro-preview', 
+    name: 'Gemini 3.0 Pro (預覽版)', 
+    description: '最新一代模型，品質最高但可能仍在測試中。'
+  },
+  { 
     id: 'gemini-2.0-flash', 
     name: 'Gemini 2.0 Flash (穩定版 / 推薦)', 
     description: '目前最穩定且快速的模型，適合大多數用途。'
@@ -10,11 +15,6 @@ export const AI_MODELS = [
     id: 'gemini-2.0-flash-lite-preview-02-05', 
     name: 'Gemini 2.0 Flash Lite (極速)', 
     description: '針對低延遲優化，適合長錄音快速轉錄。'
-  },
-  { 
-    id: 'gemini-3-pro-preview', 
-    name: 'Gemini 3.0 Pro (預覽版)', 
-    description: '最新一代模型，品質最高但可能仍在測試中。'
   },
   { 
     id: 'gemini-2.0-flash-thinking-exp-01-21', 

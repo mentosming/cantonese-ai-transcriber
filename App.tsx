@@ -38,7 +38,7 @@ const App: React.FC = () => {
 
   const [settings, setSettings] = useState<TranscriptionSettings>({
     language: ['yue'], // Default to Cantonese (Array)
-    model: 'gemini-2.0-flash', // Default Model (Updated to stable version)
+    model: 'gemini-3-pro-preview', // Default Model (Reverted to 3.0 Pro)
     enableDiarization: true,
     enableTimestamps: true, // Default to true for better table view experience
     speakers: [],
