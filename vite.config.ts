@@ -6,20 +6,16 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, (process as any).cwd(), '');
   return {
     plugins: [react()],
-    // Handle specific security headers required for SharedArrayBuffer (ffmpeg.wasm)
-    server: {
-      headers: {
-        'Cross-Origin-Opener-Policy': 'same-origin',
-        'Cross-Origin-Embedder-Policy': 'require-corp',
-      },
-    },
-    optimizeDeps: {
-      exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
-    },
+    // Headers removed to allow CDN scripts (Tailwind/LameJS) to load without CORS issues
+    // optimizeDeps for ffmpeg removed as we switched to lamejs
+    
     // Polyfill process.env for the client-side code
-    // Prioritize process.env (CI/System env) over .env file
     define: {
       'process.env.API_KEY': JSON.stringify(process.env.API_KEY || env.API_KEY),
+      // CRITICAL FIX: Polyfill process.env to prevent "process is not defined" crashes in browser
+      'process.env': {
+        NODE_ENV: JSON.stringify(mode),
+      }
     },
     build: {
       outDir: 'dist',
