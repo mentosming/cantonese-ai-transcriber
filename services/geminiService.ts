@@ -2,31 +2,29 @@ import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { TranscriptionSettings, TranscriptionError } from "../types";
 import { MAX_FILE_SIZE_INLINE, LANGUAGES, ERROR_MESSAGES } from "../constants";
 
-// Declare the global constant defined in vite.config.ts
-declare const __GEMINI_API_KEY__: string;
-
-// Helper function to safely get the API Key
-const getApiKey = (): string => {
-  let key = '';
-  
-  // 1. Try the Vite-injected global constant (Most reliable)
+// Helper to extract clean message from JSON error string
+const cleanErrorMessage = (msg: string): string => {
+  if (!msg) return "";
   try {
-    key = __GEMINI_API_KEY__;
+    // Check if the message contains a JSON object (common in Google API errors)
+    const jsonStart = msg.indexOf('{');
+    const jsonEnd = msg.lastIndexOf('}');
+    
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      const jsonStr = msg.substring(jsonStart, jsonEnd + 1);
+      const parsed = JSON.parse(jsonStr);
+      
+      // Recursive check for nested error objects
+      if (parsed.error) {
+        if (typeof parsed.error === 'string') return parsed.error;
+        if (parsed.error.message) return parsed.error.message;
+      }
+      if (parsed.message) return parsed.message;
+    }
   } catch (e) {
-    // Ignore ReferenceError if not defined
+    // If parse fails, return original string
   }
-
-  // 2. Fallback to standard Vite env var
-  if (!key && (import.meta as any).env?.VITE_API_KEY) {
-    key = (import.meta as any).env.VITE_API_KEY;
-  }
-
-  // 3. Last resort fallback (unlikely to work in browser but good for completeness)
-  if (!key && typeof process !== 'undefined' && process.env?.API_KEY) {
-    key = process.env.API_KEY;
-  }
-
-  return key;
+  return msg;
 };
 
 // Helper to encode file to Base64
@@ -70,7 +68,7 @@ const uploadFileToGemini = async (file: File, apiKey: string): Promise<string> =
 
   if (!initRes.ok) {
     const errorText = await initRes.text();
-    throw new Error(`Init upload failed: ${initRes.status} - ${errorText}`);
+    throw new Error(`Init upload failed: ${initRes.status} - ${cleanErrorMessage(errorText)}`);
   }
 
   const uploadUrlHeader = initRes.headers.get('x-goog-upload-url');
@@ -93,7 +91,7 @@ const uploadFileToGemini = async (file: File, apiKey: string): Promise<string> =
 
   if (!uploadRes.ok) {
     const errorText = await uploadRes.text();
-    throw new Error(`Upload bytes failed: ${uploadRes.status} - ${errorText}`);
+    throw new Error(`Upload bytes failed: ${uploadRes.status} - ${cleanErrorMessage(errorText)}`);
   }
 
   const uploadResult = await uploadRes.json();
@@ -131,13 +129,15 @@ export const transcribeMedia = async (
   onProgress: (text: string) => void,
   signal: AbortSignal
 ) => {
-  const apiKey = getApiKey();
+  // CRITICAL FIX: Directly access process.env.API_KEY.
+  // Vite will replace this string at build time.
+  const apiKey = process.env.API_KEY;
 
   if (!apiKey) {
-    console.error("API Key missing in environment.");
+    console.error("API Key missing.");
     throw { 
       type: 'auth', 
-      message: "找不到 API Key。請確保您已在 Vercel 設定 'API_KEY' 或 'VITE_API_KEY'，並且已執行 [Redeploy] 重新部署。" 
+      message: "API Key not found. Please ensure 'API_KEY' is set in your Vercel Environment Variables." 
     } as TranscriptionError;
   }
 
@@ -147,7 +147,6 @@ export const transcribeMedia = async (
   const selectedLangIds = settings.language;
   const selectedLangs = LANGUAGES.filter(l => selectedLangIds.includes(l.id));
   
-  // Fallback to Cantonese if empty (should not happen via UI)
   if (selectedLangs.length === 0) selectedLangs.push(LANGUAGES[0]);
 
   const langNames = selectedLangs.map(l => l.name).join(', ');
@@ -199,7 +198,6 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
     }
   }
 
-  // --- NEW: Custom Prompt / Remarks ---
   if (settings.customPrompt && settings.customPrompt.trim()) {
     systemInstruction += `\n\n**ADDITIONAL USER INSTRUCTIONS (High Priority):**\n${settings.customPrompt.trim()}`;
   }
@@ -230,56 +228,101 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
       contentPart = part;
     }
 
-    // 3. Generate Stream
-    const responseStream = await ai.models.generateContentStream({
-      model: 'gemini-3-pro-preview', // HARDCODED
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            contentPart,
-            { text: "Transcribe the audio file word-for-word. Please ensure you process the FULL duration of the file, not just the beginning. Do not summarize." }
-          ]
-        }
-      ],
-      config: {
-        systemInstruction: systemInstruction,
-        temperature: 0.2,
-        maxOutputTokens: 65536,
-        thinkingConfig: { thinkingBudget: 0 },
-        safetySettings: [
-          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        ]
-      }
-    });
+    // 3. Generate Stream with Fallback Logic
+    // We try the newest model first, then fallback to a stable one if it fails (404/400).
+    const modelsToTry = [
+      'gemini-3-pro-preview',
+      'gemini-2.0-flash-exp'
+    ];
 
-    // 4. Consume Stream
-    for await (const chunk of responseStream) {
-      if (signal.aborted) {
-        throw { type: 'general', message: "Transcription stopped by user." };
-      }
-      const text = chunk.text;
-      if (text) {
-        onProgress(text);
+    let lastError: any;
+
+    for (const modelName of modelsToTry) {
+      try {
+        if (signal.aborted) break;
+
+        const config: any = {
+          systemInstruction: systemInstruction,
+          temperature: 0.2,
+          maxOutputTokens: 65536,
+          safetySettings: [
+            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          ]
+        };
+
+        // Only add thinking config for models that support it (Gemini 3/2.5)
+        // Gemini 2.0 Flash Exp might not behave well with it, so we reserve it for the main model.
+        if (modelName.includes('gemini-3')) {
+           config.thinkingConfig = { thinkingBudget: 0 };
+        }
+
+        const responseStream = await ai.models.generateContentStream({
+          model: modelName,
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                contentPart,
+                { text: "Transcribe the audio file word-for-word. Please ensure you process the FULL duration of the file, not just the beginning. Do not summarize." }
+              ]
+            }
+          ],
+          config: config
+        });
+
+        for await (const chunk of responseStream) {
+          if (signal.aborted) {
+            throw { type: 'general', message: "Transcription stopped by user." };
+          }
+          const text = chunk.text;
+          if (text) {
+            onProgress(text);
+          }
+        }
+
+        // If we complete the stream successfully, return immediately
+        return;
+
+      } catch (e: any) {
+        console.warn(`Model ${modelName} failed:`, e);
+        lastError = e;
+        
+        // Stop retrying if user aborted or if it's a safety block
+        if (signal.aborted) throw e;
+        if (e.response?.promptFeedback?.blockReason) throw e;
+
+        // Continue to next model in loop...
       }
     }
+
+    // If all models failed, throw the last error
+    if (lastError) throw lastError;
 
   } catch (error: any) {
     if (signal.aborted) return;
     if (error.type && error.message) throw error;
 
+    // Extract clean message
+    const rawMsg = error.message || JSON.stringify(error);
+    const cleanMsg = cleanErrorMessage(rawMsg) || ERROR_MESSAGES.GENERAL;
+
     const errObj: TranscriptionError = {
-      message: error.message || ERROR_MESSAGES.GENERAL,
+      message: cleanMsg,
       type: 'general'
     };
 
-    if (error.message?.includes('403')) errObj.type = 'auth';
-    if (error.message?.includes('429')) errObj.type = 'quota';
-    if (error.message?.includes('fetch')) errObj.type = 'network';
+    if (rawMsg.includes('403')) errObj.type = 'auth';
+    if (rawMsg.includes('429')) errObj.type = 'quota';
+    if (rawMsg.includes('fetch') || rawMsg.includes('network')) errObj.type = 'network';
     if (error.response?.promptFeedback?.blockReason) errObj.type = 'safety';
+
+    // Enhance message for specific codes
+    if (rawMsg.includes('404')) {
+      errObj.message = `Model not found or API route unavailable (404). Please verify your API Key has access to Gemini 1.5/2.0/3.0 models.`;
+    }
 
     throw errObj;
   }
@@ -287,10 +330,10 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
 
 // New Function for Summarization
 export const generateSummary = async (text: string): Promise<string> => {
-  const apiKey = getApiKey();
+  const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
-    throw new Error("找不到 API Key，無法生成摘要。請檢查部署設定。");
+    throw new Error("API Key not found. Please check Vercel settings.");
   }
 
   const ai = new GoogleGenAI({ apiKey: apiKey });
@@ -315,9 +358,9 @@ ${text.slice(0, 100000)} ... (截取部分內容以符合 Context Window，若�
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview', // HARDCODED
+      model: 'gemini-3-pro-preview', // Try this first
       contents: [
-          { role: 'user', parts: [{ text: text }, { text: prompt }] } // Send full text as first part context
+          { role: 'user', parts: [{ text: text }, { text: prompt }] }
       ],
       config: {
         temperature: 0.3,
@@ -325,7 +368,17 @@ ${text.slice(0, 100000)} ... (截取部分內容以符合 Context Window，若�
     });
     return response.text || "無法生成摘要。";
   } catch (error: any) {
-    console.error("Summary generation error:", error);
-    throw new Error(error.message || "生成摘要時發生錯誤");
+    // Retry with older model if summary fails
+    try {
+        const fallbackAi = new GoogleGenAI({ apiKey: apiKey });
+        const response = await fallbackAi.models.generateContent({
+            model: 'gemini-2.0-flash-exp',
+            contents: [{ role: 'user', parts: [{ text: text }, { text: prompt }] }],
+        });
+        return response.text || "無法生成摘要。";
+    } catch (fallbackError: any) {
+        console.error("Summary generation error:", error);
+        throw new Error(cleanErrorMessage(error.message) || "生成摘要時發生錯誤");
+    }
   }
 };

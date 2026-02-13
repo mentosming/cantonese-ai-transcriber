@@ -187,7 +187,11 @@ const App: React.FC = () => {
         setStatus('stopped');
       } else {
         setStatus('error');
-        setError(err);
+        // Ensure we pass a clean error object
+        setError({
+            message: err.message || JSON.stringify(err),
+            type: err.type || 'general'
+        });
       }
     } finally {
       abortControllerRef.current = null;
@@ -589,8 +593,8 @@ const App: React.FC = () => {
                    </div>
                    
                    {error && (
-                     <span className="text-xs text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-300 px-2 py-1 rounded flex items-center max-w-[300px] truncate" title={error.message}>
-                       <AlertCircle size={12} className="mr-1 flex-shrink-0"/> {error.message}
+                     <span className="text-xs text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-300 px-2 py-1 rounded flex items-center max-w-[300px] whitespace-pre-wrap break-all leading-tight" title={error.message}>
+                       <AlertCircle size={12} className="mr-1 flex-shrink-0"/> {error.message.substring(0, 100)}{error.message.length > 100 ? '...' : ''}
                      </span>
                    )}
                 </div>
