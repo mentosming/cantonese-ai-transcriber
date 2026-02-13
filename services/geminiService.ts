@@ -104,15 +104,16 @@ export const transcribeMedia = async (
   onProgress: (text: string) => void,
   signal: AbortSignal
 ) => {
-  // Robust check for API Key
-  // @ts-ignore - Process might be undefined in strict environments, but polyfilled by Vite
-  const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) ? process.env.API_KEY : null;
+  // CRITICAL FIX: Directly access process.env.API_KEY.
+  // Vite will replace this string at build time.
+  // Do NOT check "typeof process" because process does not exist in the browser.
+  const apiKey = process.env.API_KEY;
 
   if (!apiKey) {
-    console.error("API Key missing. Environment:", typeof process !== 'undefined' ? process.env : "N/A");
+    console.error("API Key missing.");
     throw { 
       type: 'auth', 
-      message: "API Key not found. Please add 'API_KEY' to your Vercel Project Settings (Environment Variables) and redeploy." 
+      message: "API Key not found. Please ensure 'API_KEY' is set in your Vercel Environment Variables." 
     } as TranscriptionError;
   }
 
@@ -262,8 +263,7 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
 
 // New Function for Summarization
 export const generateSummary = async (text: string): Promise<string> => {
-  // @ts-ignore
-  const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) ? process.env.API_KEY : null;
+  const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
     throw new Error("API Key not found. Please check Vercel settings.");
