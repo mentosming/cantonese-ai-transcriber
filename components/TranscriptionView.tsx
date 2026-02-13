@@ -88,13 +88,14 @@ const TranscriptionView: React.FC<TranscriptionViewProps> = ({ text, status, onC
         }
 
         // 2. Check for Timestamped Segment
-        // Matches [00:00 - 00:05] or [00:00]
-        const match = line.match(/^\[(\d{1,2}:\d{2}(?::\d{2})?)(?:\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?))?\]\s*(?:(.*?):)?\s*(.*)/);
+        // Matches [00:00 - 00:05] Speaker: Content
+        // Updated Regex to handle potential Markdown bolding in speaker name: **Speaker**:
+        const match = line.match(/^\[(\d{1,2}:\d{2}(?::\d{2})?)(?:\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?))?\]\s*(?:(?:\*\*)?([^*:]+?)(?:\*\*)?:)?\s*(.*)/);
         
         if (match) {
             const rawStartTime = match[1];
             const rawEndTime = match[2];
-            const speaker = match[3] || '';
+            const speaker = match[3] || ''; // Extracted speaker name without bolding chars
             const content = match[4];
 
             // Apply Offset

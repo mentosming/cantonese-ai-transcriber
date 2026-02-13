@@ -151,60 +151,47 @@ export const transcribeMedia = async (
   const langNames = selectedLangs.map(l => l.name).join(', ');
   const langInstructions = selectedLangs.map(l => `### ${l.name} Rules:\n${l.instruction}`).join('\n\n');
 
+  // STRONGER PROMPT FOR DIARIZATION
   let systemInstruction = `
 You are a professional Transcriber. 
 Your task is to transcribe the **ENTIRE** audio/video file into text with high accuracy.
 The audio may contain one or more of the following languages: **${langNames}**.
 
-**CRITICAL INSTRUCTION: FULL DURATION**
-- The audio file may be long (e.g., > 3 minutes). 
-- You MUST continue transcribing until the audio completely ends.
-- **Do not stop** at long pauses or silence.
-- **Do not stop** after the first minute.
-- If the audio is silent for a while, write [Silence], then continue listening for speech.
+**CRITICAL RULE: STRICT OUTPUT FORMAT**
+You MUST use the following format for EVERY SINGLE LINE. Do not change it.
+\`[MM:SS - MM:SS] Speaker Name: Content\`
+
+**Speaker Identification Rules (MANDATORY):**
+1. **NEVER** omit the "Speaker Name" part. 
+2. If you know the name, use it.
+3. If you do NOT know the name, use generic labels like **"Speaker 1"**, **"Speaker 2"**, **"Interviewer"**, **"Respondent"**.
+4. **NEVER** output a line like \`[00:00 - 00:05] Content\` (Missing speaker). This is forbidden.
+5. **NEVER** output a line like \`Speaker: [00:00 - 00:05] Content\`. Time must be first.
+6. Do NOT use markdown bolding (e.g. **Speaker**) for the name. Just plain text.
+
+**Formatting Examples:**
+CORRECT: \`[00:00 - 00:05] Speaker 1: Hello, how are you?\`
+CORRECT: \`[00:05 - 00:10] John: I am fine, thank you.\`
+WRONG:   \`[00:00 - 00:05] Hello, how are you?\` (Missing speaker)
+WRONG:   \`Speaker 1: Hello.\` (Missing timestamps)
 
 **Language Rules:**
 ${langInstructions}
 
-**Mixed Language Handling (Code-Switching):**
-If the audio switches between the selected languages (e.g., Cantonese mixed with English), transcribe each part in its respective language script accurately.
+**Transcription Rules:**
+- Transcribe word-for-word.
+- Capture the FULL duration. Do not stop early.
+- If there is a long silence, write \`[MM:SS - MM:SS] System: [Silence]\`.
 `;
 
-  // Formatting & Timestamp Logic
-  if (settings.enableTimestamps) {
-    systemInstruction += `
-**Formatting:**
-- Output specific format per line: \`[MM:SS - MM:SS] Speaker Name: Content\`
-- Example: \`[00:00 - 00:05] Peter: Hello.\`
-- Unknown speaker: "Unknown".
-- No Markdown bolding for metadata.
-- **Every sentence** must have a timestamp.
-- **IMPORTANT:** Always start timestamps from **00:00** relative to the beginning of THIS specific file. Do not attempt to calculate offsets from previous files.`;
-  } else {
-    systemInstruction += `
-**Formatting:**
-- Output: \`Speaker Name: Content\`
-- No timestamps.`;
-  }
-
-  if (settings.enableDiarization) {
-    // Stronger instruction for diarization
-    systemInstruction += `
-    
-**Speaker Diarization (Mandatory):**
-- You MUST identify different speakers in the audio.
-- Format strictly as: \`[MM:SS - MM:SS] Speaker Name: Content\`
-- If you don't know the name, use "Speaker 1", "Speaker 2", etc.
-- Do NOT combine speeches from different speakers into one paragraph. Start a new line for every speaker change.
-`;
-    if (settings.speakers.length > 0) {
+  // Additional settings injection
+  if (settings.speakers.length > 0) {
       const speakerMap = settings.speakers.map(s => `${s.id} is ${s.name}`).join(', ');
-      systemInstruction += `\nKnown voices: ${speakerMap}.`;
-    }
+      systemInstruction += `\n**Known Speakers Context:**\nUse these names if the voice matches: ${speakerMap}.`;
   }
 
   if (settings.customPrompt && settings.customPrompt.trim()) {
-    systemInstruction += `\n\n**ADDITIONAL USER INSTRUCTIONS (High Priority):**\n${settings.customPrompt.trim()}`;
+    systemInstruction += `\n\n**ADDITIONAL USER INSTRUCTIONS (Override everything else):**\n${settings.customPrompt.trim()}`;
   }
 
   try {
@@ -235,8 +222,6 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
 
     // 3. Generate Stream with Model Selection & Fallback
     const selectedModel = settings.model || 'gemini-3-pro-preview';
-    
-    // Construct fallback list (try selected first, then others if explicitly failing with recoverable errors)
     const fallbackModels = AI_MODELS.map(m => m.id).filter(id => id !== selectedModel);
     const modelsToTry = [selectedModel, ...fallbackModels];
 
@@ -248,7 +233,7 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
 
         const config: any = {
           systemInstruction: systemInstruction,
-          temperature: 0.2,
+          temperature: 0.2, // Low temperature for factual transcription
           maxOutputTokens: 65536,
           safetySettings: [
             { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -258,8 +243,6 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
           ]
         };
 
-        // Disable thinkingBudget for models that support it if using transcription (save tokens)
-        // or strictly follow logic for specific models
         if (modelName.includes('gemini-3') || modelName.includes('thinking')) {
            config.thinkingConfig = { thinkingBudget: 0 };
         }
@@ -271,7 +254,8 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
               role: 'user',
               parts: [
                 contentPart,
-                { text: "Transcribe the audio file word-for-word. Please ensure you process the FULL duration of the file, not just the beginning. Do not summarize." }
+                // Reinforce the instruction in the user message too
+                { text: "Transcribe audio. STRICT FORMAT: `[Start-End] Speaker: Content`. Identify distinct speakers (Speaker 1, Speaker 2) if names are unknown." }
               ]
             }
           ],
@@ -288,37 +272,29 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
           }
         }
 
-        // If we complete the stream successfully, return immediately
-        return;
+        return; // Success
 
       } catch (e: any) {
         console.warn(`Model ${modelName} failed:`, e);
         lastError = e;
         
-        // Stop retrying if user aborted or if it's a safety block
         if (signal.aborted) throw e;
         if (e.response?.promptFeedback?.blockReason) throw e;
         
-        // If it's a model not found (404) or bad request (400), try next model
         const errMsg = e.message || JSON.stringify(e);
         if (errMsg.includes('404') || errMsg.includes('400')) {
              continue; 
         }
-
-        // For other errors (like auth), probably stop
-        // But for network glitches, we might want to continue, but let's be strict to avoid burning quota on bad loops
         if (errMsg.includes('403')) throw e; 
       }
     }
 
-    // If all models failed, throw the last error
     if (lastError) throw lastError;
 
   } catch (error: any) {
     if (signal.aborted) return;
     if (error.type && error.message) throw error;
 
-    // Extract clean message
     const rawMsg = error.message || JSON.stringify(error);
     const cleanMsg = cleanErrorMessage(rawMsg) || ERROR_MESSAGES.GENERAL;
 
@@ -343,32 +319,22 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
 // New Function for Summarization
 export const generateSummary = async (text: string): Promise<string> => {
   const apiKey = process.env.API_KEY;
-  
-  if (!apiKey) {
-    throw new Error("API Key not found. Please check Vercel settings.");
-  }
+  if (!apiKey) throw new Error("API Key not found.");
 
   const ai = new GoogleGenAI({ apiKey: apiKey });
   
   const prompt = `
 請根據提供的轉錄文字，生成一份極其詳盡的「問答式摘要」(Q&A Summary)。
-
 **轉錄內容：**
-${text.slice(0, 100000)} ... (截取部分內容以符合 Context Window，若內容過長)
+${text.slice(0, 100000)} ... 
 
 **指令與要求：**
 1. **角色**：你是一位專業的案件分析師或書記。
-2. **格式**：必須使用「問答形式」(Q&A)，例如：
-   Q: 當事人為何出現在現場？
-   A: 根據錄音，當事人表示...
-3. **內容深度**：
-   - 必須涵蓋「背景資訊」及「案情/事件詳細經過」。
-   - **關鍵要求**：摘要長度與細節量必須保留原文至少 **50%** 的資訊。絕不要只做簡短總結。
-   - 保留具體的人名、地名、時間、關鍵對話細節。
+2. **格式**：必須使用「問答形式」(Q&A)。
+3. **內容深度**：保留原文至少 **50%** 的資訊。
 4. **語言**：繁體中文 (Traditional Chinese)。
 `;
 
-  // Try robust models for summary
   const summaryModels = ['gemini-3-pro-preview', 'gemini-2.0-flash-exp'];
 
   for (const model of summaryModels) {
@@ -378,16 +344,12 @@ ${text.slice(0, 100000)} ... (截取部分內容以符合 Context Window，若�
             contents: [
                 { role: 'user', parts: [{ text: text }, { text: prompt }] }
             ],
-            config: {
-                temperature: 0.3,
-            }
+            config: { temperature: 0.3 }
         });
         return response.text || "無法生成摘要。";
       } catch (error: any) {
          console.warn(`Summary failed with ${model}`, error);
-         // Continue to next model if available
       }
   }
-  
   throw new Error("無法生成摘要，所有模型嘗試皆失敗。");
 };
