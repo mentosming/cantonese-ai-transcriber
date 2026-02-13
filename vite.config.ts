@@ -11,11 +11,12 @@ export default defineConfig(({ mode }) => {
     
     // Polyfill process.env for the client-side code
     define: {
-      'process.env.API_KEY': JSON.stringify(process.env.API_KEY || env.API_KEY),
-      // CRITICAL FIX: Polyfill process.env to prevent "process is not defined" crashes in browser
-      'process.env': {
-        NODE_ENV: JSON.stringify(mode),
-      }
+      // CRITICAL FIX: Define process.env as a single object containing all necessary keys
+      // This ensures both NODE_ENV and API_KEY are available at runtime
+      'process.env': JSON.stringify({
+        NODE_ENV: mode,
+        API_KEY: process.env.API_KEY || env.API_KEY,
+      }),
     },
     build: {
       outDir: 'dist',
