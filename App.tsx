@@ -27,13 +27,14 @@ const App: React.FC = () => {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') as 'light' | 'dark') || 'light');
   const [fontSize, setFontSize] = useState<'normal' | 'large' | 'xl'>(() => (localStorage.getItem('fontSize') as 'normal' | 'large' | 'xl') || 'normal');
 
-  // Auth State
+  // Auth & Config State
   const [isPro, setIsPro] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [licenseInput, setLicenseInput] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [missingApiKey, setMissingApiKey] = useState(false);
 
   const [settings, setSettings] = useState<TranscriptionSettings>({
     language: ['yue'], // Default to Cantonese (Array)
@@ -49,6 +50,12 @@ const App: React.FC = () => {
 
   // --- Initialization ---
   useEffect(() => {
+    // Check Config
+    if (!process.env.API_KEY) {
+        setMissingApiKey(true);
+    }
+
+    // Check License
     const checkSavedLicense = async () => {
         const savedKey = getStoredLicense();
         if (savedKey) {
@@ -141,6 +148,10 @@ const App: React.FC = () => {
 
   const handleStart = async () => {
     if (!file) return;
+    if (missingApiKey) {
+        alert("無法開始：缺少 API Key。請檢查系統設定。");
+        return;
+    }
 
     // --- PRO LIMIT CHECK ---
     if (!isPro) {
@@ -269,6 +280,15 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen bg-slate-50 dark:bg-slate-950 flex flex-col overflow-hidden transition-colors duration-200">
+      
+      {/* --- Critical Config Warning Banner --- */}
+      {missingApiKey && (
+        <div className="bg-red-600 text-white px-4 py-2 text-center text-sm font-bold flex items-center justify-center gap-2 shadow-lg z-50 animate-pulse">
+            <AlertCircle size={18} />
+            <span>系統未檢測到 API Key。請在 .env 或 Vercel 環境變數中添加 "API_KEY"。</span>
+        </div>
+      )}
+
       {/* Admin Panel Overlay */}
       {showAdminPanel && <AdminPanel onLogout={handleLogout} />}
 
