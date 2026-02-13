@@ -2,6 +2,33 @@ import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { TranscriptionSettings, TranscriptionError } from "../types";
 import { MAX_FILE_SIZE_INLINE, LANGUAGES, ERROR_MESSAGES } from "../constants";
 
+// Declare the global constant defined in vite.config.ts
+declare const __GEMINI_API_KEY__: string;
+
+// Helper function to safely get the API Key
+const getApiKey = (): string => {
+  let key = '';
+  
+  // 1. Try the Vite-injected global constant (Most reliable)
+  try {
+    key = __GEMINI_API_KEY__;
+  } catch (e) {
+    // Ignore ReferenceError if not defined
+  }
+
+  // 2. Fallback to standard Vite env var
+  if (!key && (import.meta as any).env?.VITE_API_KEY) {
+    key = (import.meta as any).env.VITE_API_KEY;
+  }
+
+  // 3. Last resort fallback (unlikely to work in browser but good for completeness)
+  if (!key && typeof process !== 'undefined' && process.env?.API_KEY) {
+    key = process.env.API_KEY;
+  }
+
+  return key;
+};
+
 // Helper to encode file to Base64
 const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: string; mimeType: string } }> => {
   return new Promise((resolve, reject) => {
@@ -104,16 +131,13 @@ export const transcribeMedia = async (
   onProgress: (text: string) => void,
   signal: AbortSignal
 ) => {
-  // CRITICAL FIX: Directly access process.env.API_KEY.
-  // Vite will replace this string at build time.
-  // Do NOT check "typeof process" because process does not exist in the browser.
-  const apiKey = process.env.API_KEY;
+  const apiKey = getApiKey();
 
   if (!apiKey) {
-    console.error("API Key missing.");
+    console.error("API Key missing in environment.");
     throw { 
       type: 'auth', 
-      message: "API Key not found. Please ensure 'API_KEY' is set in your Vercel Environment Variables." 
+      message: "找不到 API Key。請確保您已在 Vercel 設定 'API_KEY' 或 'VITE_API_KEY'，並且已執行 [Redeploy] 重新部署。" 
     } as TranscriptionError;
   }
 
@@ -263,10 +287,10 @@ If the audio switches between the selected languages (e.g., Cantonese mixed with
 
 // New Function for Summarization
 export const generateSummary = async (text: string): Promise<string> => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = getApiKey();
   
   if (!apiKey) {
-    throw new Error("API Key not found. Please check Vercel settings.");
+    throw new Error("找不到 API Key，無法生成摘要。請檢查部署設定。");
   }
 
   const ai = new GoogleGenAI({ apiKey: apiKey });
