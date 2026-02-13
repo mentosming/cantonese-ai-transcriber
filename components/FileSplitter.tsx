@@ -127,7 +127,7 @@ const FileSplitter: React.FC<FileSplitterProps> = ({ onSelectSegment, isPro, onR
             </h3>
             
             <p className="text-xs text-slate-600 dark:text-slate-400 mb-6 max-w-[260px] leading-relaxed">
-                錄音太長轉唔到？Pro 版支援<strong>自動智能切割</strong>長錄音 (>1小時)，配合無限時長轉錄權限，輕鬆處理大型會議記錄。
+                錄音太長轉唔到？Pro 版支援<strong>自動智能切割</strong>長錄音 (&gt;1小時)，配合無限時長轉錄權限，輕鬆處理大型會議記錄。
             </p>
 
             <div className="flex flex-col gap-3 w-full max-w-[240px]">
@@ -165,7 +165,7 @@ const FileSplitter: React.FC<FileSplitterProps> = ({ onSelectSegment, isPro, onR
             <h3 className="font-semibold">長檔案分割器</h3>
         </div>
         <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 shrink-0">
-            如果錄音極長 (>1小時)，請先分割。系統會根據檔案長度自動計算分割大小。
+            如果錄音極長 (&gt;1小時)，請先分割。系統會根據檔案長度自動計算分割大小。
         </p>
 
         <div className="flex flex-col gap-3 shrink-0">
